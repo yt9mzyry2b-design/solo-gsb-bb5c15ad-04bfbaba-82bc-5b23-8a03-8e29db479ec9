@@ -1,0 +1,12 @@
+services:
+  bus-fare:
+    build: .
+    container_name: bus-fare-check
+    ports:
+      - "8000:8000"
+    volumes:
+      - bus-data:/data
+    restart: unless-stopped
+
+volumes:
+  bus-data:

@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>公交刷卡票价核验台</title>
+<style>
+  :root {
+    --bg: #f2f4f8; --panel: #fff; --line: #dfe4ec; --ink: #1f2937;
+    --muted: #6b7280; --brand: #1d4ed8; --brand-bg: #e8effd;
+    --ok: #047857; --ok-bg: #e6f6ef; --err: #b91c1c; --err-bg: #fdecec;
+    --warn: #a16207; --warn-bg: #fdf3e0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.6 "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: var(--bg); color: var(--ink); }
+  header { background: var(--brand); color: #fff; padding: 14px 24px;
+           display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { opacity: .8; font-size: 12px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 20px; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tabs button { border: 1px solid var(--line); background: #fff; color: var(--muted);
+    padding: 8px 18px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px; }
+  .tabs button.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 0 8px 8px 8px; padding: 20px; margin-bottom: 16px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  h2 { font-size: 15px; margin: 0 0 12px; padding-bottom: 8px;
+       border-bottom: 1px solid var(--line); }
+  h2 .hint { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.flagged td { background: var(--err-bg); }
+  input, select { padding: 6px 9px; border: 1px solid var(--line); border-radius: 6px;
+                  font-size: 13px; font-family: inherit; }
+  form.inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+                margin-bottom: 14px; }
+  form.inline input[type=text], form.inline input[type=number],
+  form.inline input[type=datetime-local] { min-width: 0; }
+  button.btn { background: var(--brand); color: #fff; border: none; border-radius: 6px;
+               padding: 7px 16px; cursor: pointer; font-size: 13px; }
+  button.btn.ghost { background: #fff; color: var(--brand); border: 1px solid var(--brand); }
+  button.btn.danger { background: #fff; color: var(--err); border: 1px solid #f0b4b4;
+                      padding: 3px 10px; }
+  button.btn:disabled { opacity: .5; cursor: not-allowed; }
+  .del { color: var(--err); cursor: pointer; border: none; background: none; font-size: 12px; }
+  textarea { width: 100%; min-height: 130px; border: 1px solid var(--line);
+             border-radius: 6px; padding: 9px; font: 12px/1.6 ui-monospace, monospace; }
+  .toast { position: fixed; top: 16px; right: 16px; z-index: 99; padding: 10px 16px;
+           border-radius: 8px; display: none; max-width: 360px; }
+  .toast.ok { display: block; background: var(--ok-bg); color: var(--ok); border: 1px solid #9fd5bf; }
+  .toast.err { display: block; background: var(--err-bg); color: var(--err); border: 1px solid #f1b4b4; }
+  .alert { border-radius: 8px; padding: 14px 18px; margin-bottom: 16px; }
+  .alert.err { background: var(--err-bg); border: 1px solid #f1b4b4; color: var(--err); }
+  .alert.ok { background: var(--ok-bg); border: 1px solid #9fd5bf; color: var(--ok); }
+  .alert h3 { margin: 0 0 8px; font-size: 14px; }
+  .alert ul { margin: 0; padding-left: 20px; }
+  .alert li { margin: 3px 0; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+  .badge.in { background: var(--brand-bg); color: var(--brand); }
+  .badge.out { background: #f1ecfb; color: #6d28d9; }
+  .badge.cap { background: var(--warn-bg); color: var(--warn); }
+  .muted { color: var(--muted); }
+  .row-actions { display: flex; gap: 8px; align-items: center; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .settings-box { background: var(--brand-bg); border-radius: 8px; padding: 14px 16px;
+                  display: flex; gap: 18px; align-items: flex-end; flex-wrap: wrap; }
+  .empty { color: var(--muted); text-align: center; padding: 22px; }
+  .jump { cursor: pointer; font-weight: 600; text-decoration: underline; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>🚌 公交刷卡票价核验台</h1>
+  <span class="sub">FastAPI + SQLite · 运营日 04:00 分界 · 90 分钟换乘抵扣 · 当日封顶</span>
+</header>
+<main>
+  <div class="tabs">
+    <button data-tab="config" class="active">① 参数配置</button>
+    <button data-tab="swipes">② 刷卡记录</button>
+    <button data-tab="result">③ 核验结果</button>
+  </div>
+
+  <!-- ============ 参数配置 ============ -->
+  <section id="tab-config" class="panel">
+    <div class="settings-box" style="margin-bottom:20px">
+      <div class="field">
+        <label>换乘抵扣额（元，间隔 ≤ 90 分钟）</label>
+        <input id="set-discount" type="number" step="0.01" min="0" style="width:130px">
+      </div>
+      <div class="field">
+        <label>每日封顶额（元 / 卡 / 运营日）</label>
+        <input id="set-cap" type="number" step="0.01" min="0" style="width:130px">
+      </div>
+      <button class="btn" onclick="saveSettings()">保存参数</button>
+      <span class="muted">抵扣在基础票价上先扣减，再按运营日累计套用封顶。</span>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <h2>站点分区 <span class="hint">站点名 → 分区号</span></h2>
+        <form class="inline" onsubmit="return addStation(event)">
+          <input type="text" id="st-name" placeholder="站点名称" required>
+          <input type="number" id="st-zone" placeholder="分区" min="0" required style="width:90px">
+          <button class="btn" type="submit">添加 / 更新</button>
+        </form>
+        <table>
+          <thead><tr><th>站点</th><th class="num">分区</th><th></th></tr></thead>
+          <tbody id="tb-stations"></tbody>
+        </table>
+      </div>
+      <div>
+        <h2>票价矩阵 <span class="hint">分区之间票价（元，方向无关）</span></h2>
+        <form class="inline" onsubmit="return addFare(event)">
+          <input type="number" id="fa-z1" placeholder="分区A" min="0" required style="width:90px">
+          <input type="number" id="fa-z2" placeholder="分区B" min="0" required style="width:90px">
+          <input type="number" id="fa-price" placeholder="票价(元)" step="0.01" min="0" required style="width:110px">
+          <button class="btn" type="submit">添加 / 更新</button>
+        </form>
+        <table>
+          <thead><tr><th class="num">分区</th><th class="num">↔</th><th class="num">分区</th><th class="num">票价(元)</th><th></th></tr></thead>
+          <tbody id="tb-fares"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 刷卡记录 ============ -->
+  <section id="tab-swipes" class="panel" hidden>
+    <h2>逐条录入 <span class="hint">IN=进站，OUT=出站；按录入顺序（编号）配对</span></h2>
+    <form class="inline" onsubmit="return addSwipe(event)">
+      <input type="text" id="sw-card" placeholder="卡号" required style="width:120px">
+      <input type="text" id="sw-station" placeholder="站点" required style="width:130px">
+      <input type="datetime-local" id="sw-time" required>
+      <select id="sw-kind">
+        <option value="IN">IN 进站</option>
+        <option value="OUT">OUT 出站</option>
+      </select>
+      <button class="btn" type="submit">添加</button>
+    </form>
+
+    <h2>批量粘贴 <span class="hint">每行：卡号,站点,YYYY-MM-DD HH:MM,IN/OUT（首行可为表头）；任一行出错则整批不写入</span></h2>
+    <textarea id="bulk-text" placeholder="卡号,站点,时间,类型&#10;A001,中央公园,2026-09-18 08:00,IN&#10;A001,科技园,2026-09-18 08:35,OUT"></textarea>
+    <div class="row-actions" style="margin:10px 0 18px">
+      <button class="btn" onclick="bulkAdd()">批量导入</button>
+      <button class="btn ghost" onclick="loadDemo()">载入演示数据</button>
+      <button class="btn danger" onclick="clearSwipes()" style="margin-left:auto">清空全部刷卡</button>
+    </div>
+
+    <h2>已录入记录（<span id="sw-count">0</span>）</h2>
+    <table>
+      <thead><tr><th class="num">#</th><th>卡号</th><th>站点</th><th>时间</th><th>类型</th><th></th></tr></thead>
+      <tbody id="tb-swipes"></tbody>
+    </table>
+  </section>
+
+  <!-- ============ 核验结果 ============ -->
+  <section id="tab-result" class="panel" hidden>
+    <div class="row-actions" style="margin-bottom:14px">
+      <button class="btn" onclick="runBilling()">▶ 运行核验 / 生成账单</button>
+      <span class="muted">发现任何错误时不出账单（无部分账单）。</span>
+    </div>
+    <div id="billing-out"></div>
+  </section>
+</main>
+<div id="toast" class="toast"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let errorIds = new Set();
+
+function toast(msg, ok = true) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = "toast " + (ok ? "ok" : "err");
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = "toast", 3200);
+}
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (res.status === 204) return {};
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || ("请求失败 " + res.status));
+  return data;
+}
+const yuan = (v) => Number(v).toFixed(2);
+
+// ---------------- tabs
+document.querySelectorAll(".tabs button").forEach(b =>
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    document.querySelectorAll("main section").forEach(s => s.hidden = true);
+    $("tab-" + b.dataset.tab).hidden = false;
+    if (b.dataset.tab === "swipes") loadSwipes();
+  }));
+
+// ---------------- 配置
+async function loadConfig() {
+  const [stations, fares, settings] = await Promise.all(
+    [api("/api/stations"), api("/api/fares"), api("/api/settings")]);
+  $("set-discount").value = settings.transfer_discount_yuan;
+  $("set-cap").value = settings.daily_cap_yuan;
+  $("tb-stations").innerHTML = stations.length ? stations.map(s => `
+    <tr><td>${esc(s.name)}</td><td class="num">${s.zone}</td>
+    <td><button class="del" onclick="delStation(${s.id})">删除</button></td></tr>`).join("")
+    : `<tr><td colspan="3" class="empty">暂无站点</td></tr>`;
+  $("tb-fares").innerHTML = fares.length ? fares.map(f => `
+    <tr><td class="num">${f.zone_from}</td><td class="num">↔</td>
+    <td class="num">${f.zone_to}</td><td class="num">${yuan(f.price_yuan)}</td>
+    <td><button class="del" onclick="delFare(${f.id})">删除</button></td></tr>`).join("")
+    : `<tr><td colspan="5" class="empty">暂无票价</td></tr>`;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+async function saveSettings() {
+  try {
+    await api("/api/settings", { method: "PUT", body: JSON.stringify({
+      transfer_discount_yuan: +$("set-discount").value,
+      daily_cap_yuan: +$("set-cap").value })});
+    toast("参数已保存"); loadConfig();
+  } catch (e) { toast(e.message, false); }
+}
+async function addStation(e) {
+  e.preventDefault();
+  try {
+    await api("/api/stations", { method: "POST", body: JSON.stringify({
+      name: $("st-name").value, zone: +$("st-zone").value })});
+    $("st-name").value = ""; $("st-zone").value = "";
+    toast("站点已保存"); loadConfig();
+  } catch (e) { toast(e.message, false); }
+  return false;
+}
+async function delStation(id) {
+  await api("/api/stations/" + id, { method: "DELETE" }); loadConfig();
+}
+async function addFare(e) {
+  e.preventDefault();
+  try {
+    await api("/api/fares", { method: "POST", body: JSON.stringify({
+      zone_from: +$("fa-z1").value, zone_to: +$("fa-z2").value,
+      price_yuan: +$("fa-price").value })});
+    $("fa-z1").value = $("fa-z2").value = $("fa-price").value = "";
+    toast("票价已保存"); loadConfig();
+  } catch (e) { toast(e.message, false); }
+  return false;
+}
+async function delFare(id) {
+  await api("/api/fares/" + id, { method: "DELETE" }); loadConfig();
+}
+
+// ---------------- 刷卡
+async function loadSwipes() {
+  const rows = await api("/api/swipes");
+  $("sw-count").textContent = rows.length;
+  $("tb-swipes").innerHTML = rows.length ? rows.map(r => `
+    <tr data-id="${r.id}" class="${errorIds.has(r.id) ? "flagged" : ""}">
+      <td class="num">${r.id}</td><td>${esc(r.card)}</td><td>${esc(r.station)}</td>
+      <td>${esc(r.tap_time)}</td>
+      <td><span class="badge ${r.kind === "IN" ? "in" : "out"}">${r.kind}</span></td>
+      <td><button class="del" onclick="delSwipe(${r.id})">删除</button></td>
+    </tr>`).join("")
+    : `<tr><td colspan="6" class="empty">暂无刷卡记录</td></tr>`;
+}
+function curLocal() {
+  const d = new Date(); d.setSeconds(0, 0);
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+async function addSwipe(e) {
+  e.preventDefault();
+  try {
+    await api("/api/swipes", { method: "POST", body: JSON.stringify({
+      card: $("sw-card").value.trim(), station: $("sw-station").value.trim(),
+      tap_time: $("sw-time").value.replace("T", " "), kind: $("sw-kind").value })});
+    $("sw-card").value = $("sw-station").value = ""; $("sw-time").value = curLocal();
+    toast("刷卡记录已添加"); loadSwipes();
+  } catch (e) { toast(e.message, false); }
+  return false;
+}
+async function bulkAdd() {
+  try {
+    const r = await api("/api/swipes/bulk", { method: "POST",
+      body: JSON.stringify({ text: $("bulk-text").value })});
+    $("bulk-text").value = "";
+    toast(`成功导入 ${r.inserted} 条`); loadSwipes();
+  } catch (e) { toast(e.message, false); }
+}
+async function delSwipe(id) {
+  await api("/api/swipes/" + id, { method: "DELETE" }); errorIds.delete(id); loadSwipes();
+}
+async function clearSwipes() {
+  if (!confirm("确定清空全部刷卡记录？")) return;
+  await api("/api/swipes", { method: "DELETE" });
+  errorIds = new Set(); loadSwipes(); toast("已清空");
+}
+async function loadDemo() {
+  if (!confirm("将清空现有站点、票价与刷卡记录并载入演示数据，继续？")) return;
+  await api("/api/demo", { method: "POST" });
+  errorIds = new Set();
+  await loadConfig(); await loadSwipes();
+  toast("演示数据已载入，可到「核验结果」运行");
+}
+function jumpSwipe(id) {
+  document.querySelector('.tabs button[data-tab="swipes"]').click();
+  const tr = document.querySelector(`tr[data-id="${id}"]`);
+  if (tr) { tr.scrollIntoView({ behavior: "smooth", block: "center" }); }
+}
+
+// ---------------- 核验
+async function runBilling() {
+  const box = $("billing-out");
+  box.innerHTML = `<p class="muted">核验中…</p>`;
+  const r = await api("/api/billing/run", { method: "POST" });
+  errorIds = new Set();
+
+  if (!r.ok) {
+    r.errors.forEach(e => e.swipe_ids.forEach(id => errorIds.add(id)));
+    box.innerHTML = `
+      <div class="alert err">
+        <h3>❌ 检出 ${r.errors.length} 个问题，未生成账单（无部分账单）</h3>
+        <ul>${r.errors.map(e => `<li>[${e.code}] ${esc(e.message)}
+          ${e.swipe_ids.map(id =>
+            `<span class="jump" onclick="jumpSwipe(${id})">→记录#${id}</span>`).join(" ")}</li>`).join("")}
+        </ul>
+      </div>`;
+    return;
+  }
+  if (!r.trips.length) {
+    box.innerHTML = `<div class="alert err"><h3>暂无任何可计价行程（刷卡记录为空）</h3></div>`;
+    return;
+  }
+  box.innerHTML = `
+    <div class="alert ok"><h3>✅ 核验通过，共 ${r.trips.length} 段行程</h3></div>
+    <h2>行程账单 <span class="hint">运营日按进站时刻 04:00 划分；同卡按运营日累计封顶</span></h2>
+    <table>
+      <thead><tr>
+        <th class="num">#</th><th>卡号</th><th>运营日</th>
+        <th>进站</th><th>分区</th><th>出站</th><th>分区</th>
+        <th class="num">基础票价</th><th>优惠来源</th><th class="num">抵扣</th>
+        <th class="num">实扣</th><th class="num">日累计</th>
+      </tr></thead>
+      <tbody>${r.trips.map(t => `
+        <tr>
+          <td class="num">${t.index}</td><td>${esc(t.card)}</td>
+          <td>${t.service_day}</td>
+          <td>${esc(t.in_station)}<br><span class="muted">${t.in_time}</span></td>
+          <td>${t.in_zone}</td>
+          <td>${esc(t.out_station)}<br><span class="muted">${t.out_time}</span></td>
+          <td>${t.out_zone}</td>
+          <td class="num">${yuan(t.base_fare_yuan)}</td>
+          <td>${esc(t.discount_source)}${t.capped ? ' <span class="badge cap">已封顶</span>' : ""}</td>
+          <td class="num">${yuan(t.discount_yuan)}</td>
+          <td class="num"><strong>${yuan(t.charged_yuan)}</strong></td>
+          <td class="num">${yuan(t.daily_total_yuan)}</td>
+        </tr>`).join("")}</tbody>
+    </table>
+    <h2 style="margin-top:22px">卡 / 运营日汇总</h2>
+    <table>
+      <thead><tr><th>卡号</th><th>运营日</th><th class="num">行程数</th>
+        <th class="num">基础合计</th><th class="num">优惠合计</th>
+        <th class="num">实扣合计</th><th>封顶</th></tr></thead>
+      <tbody>${r.summary.map(s => `
+        <tr><td>${esc(s.card)}</td><td>${s.service_day}</td>
+          <td class="num">${s.trip_count}</td>
+          <td class="num">${yuan(s.base_total_yuan)}</td>
+          <td class="num">${yuan(s.discount_total_yuan)}</td>
+          <td class="num"><strong>${yuan(s.charged_total_yuan)}</strong></td>
+          <td>${s.capped ? '<span class="badge cap">是</span>' : "否"}</td>
+        </tr>`).join("")}</tbody>
+    </table>`;
+}
+
+// init
+loadConfig().catch(e => toast(e.message, false));
+$("sw-time").value = curLocal();
+</script>
+</body>
+</html>
